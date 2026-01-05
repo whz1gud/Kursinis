@@ -1,0 +1,41 @@
+\xpg@aux {}{english}
+\contentsline {section}{Abbreviations}{3}{section*.2}%
+\contentsline {section}{Introduction}{4}{section*.3}%
+\contentsline {section}{\numberline {1.}Theoretical Background}{6}{section.1}%
+\contentsline {subsection}{\numberline {1.1.}Transformer Architecture}{6}{subsection.1.1}%
+\contentsline {subsubsection}{\numberline {1.1.1.}Attention Mechanism}{6}{subsubsection.1.1.1}%
+\contentsline {subsubsection}{\numberline {1.1.2.}Transformer Encoder Structure}{6}{subsubsection.1.1.2}%
+\contentsline {subsection}{\numberline {1.2.}Vision Transformers}{7}{subsection.1.2}%
+\contentsline {subsubsection}{\numberline {1.2.1.}Treating Images as Sequences}{7}{subsubsection.1.2.1}%
+\contentsline {subsubsection}{\numberline {1.2.2.}ViT Model Sizes}{8}{subsubsection.1.2.2}%
+\contentsline {subsection}{\numberline {1.3.}Self-Supervised Learning and DINOv2}{8}{subsection.1.3}%
+\contentsline {subsubsection}{\numberline {1.3.1.}How DINO Works}{9}{subsubsection.1.3.1}%
+\contentsline {subsubsection}{\numberline {1.3.2.}DINOv2}{9}{subsubsection.1.3.2}%
+\contentsline {subsection}{\numberline {1.4.}Metric Learning and Loss Functions}{9}{subsection.1.4}%
+\contentsline {subsubsection}{\numberline {1.4.1.}Contrastive Loss}{10}{subsubsection.1.4.1}%
+\contentsline {subsubsection}{\numberline {1.4.2.}Triplet Loss}{10}{subsubsection.1.4.2}%
+\contentsline {subsubsection}{\numberline {1.4.3.}ArcFace Loss}{11}{subsubsection.1.4.3}%
+\contentsline {subsubsection}{\numberline {1.4.4.}Summary of Loss Functions}{11}{subsubsection.1.4.4}%
+\contentsline {subsection}{\numberline {1.5.}Evaluation Metrics}{12}{subsection.1.5}%
+\contentsline {subsubsection}{\numberline {1.5.1.}Precision at K}{12}{subsubsection.1.5.1}%
+\contentsline {subsubsection}{\numberline {1.5.2.}Mean Average Precision}{12}{subsubsection.1.5.2}%
+\contentsline {subsubsection}{\numberline {1.5.3.}Micro Average Precision}{12}{subsubsection.1.5.3}%
+\contentsline {section}{\numberline {2.}Methodology}{13}{section.2}%
+\contentsline {subsection}{\numberline {2.1.}DISC21 Dataset}{13}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2.}Model Architecture}{13}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3.}Data Augmentation}{14}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4.}Experimental Setup}{15}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5.}Evaluation Protocol}{15}{subsection.2.5}%
+\contentsline {section}{\numberline {3.}Experiments and Results}{16}{section.3}%
+\contentsline {subsection}{\numberline {3.1.}Baseline Evaluation}{16}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2.}Training Dynamics}{16}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3.}Fine-tuning with Contrastive Loss}{17}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4.}Fine-tuning with Triplet Loss}{17}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5.}Fine-tuning with ArcFace Loss}{17}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6.}Results Comparison}{18}{subsection.3.6}%
+\contentsline {subsection}{\numberline {3.7.}Discussion}{18}{subsection.3.7}%
+\contentsline {section}{Results and Conclusions}{20}{section*.19}%
+\contentsline {section}{References}{21}{section*.20}%
+\contentsline {section}{Appendixes}{22}{section*.21}%
+\contentsline {subsection}{Appendix\ 1.~Detailed Training Logs}{22}{appendixcounter.1}%
+\contentsline {subsection}{Appendix\ 2.~Experimental Environment}{24}{appendixcounter.2}%

@@ -1,0 +1,820 @@
+\documentclass[
+    english,
+    % signatureplaces % prideda parašų vietas tituliniame puslapyje
+]{VUMIFPSbakalaurinis}
+\usepackage{float}
+\usepackage{wrapfig2}
+\usepackage{hyperref}
+\usepackage{algorithmicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{bm}
+\usepackage{caption}
+\usepackage{color}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{subcaption}
+\usepackage{biblatex}
+\usepackage{booktabs}
+
+% Titulinio aprašas
+\university{Vilnius University}
+\faculty{Faculty of Mathematics and Informatics}
+\department{Software Engineering Bachelor's Study Programme}
+\papertype{Coursework}
+\title{Comparison of Image Similarity Methods Using the DISC21 Dataset}
+\titleineng{Vaizdų panašumo metodų palyginimas naudojant DISC21 duomenų rinkinį}
+\author{4th year, Group 5 student}
+\secondauthor{Vytautas Mielkus}
+\supervisor{lect. Boleslovas Dapkūnas}
+\date{Vilnius – \the\year}
+
+\bibliography{bibliografija}
+
+\begin{document}
+\maketitle
+
+% Turinys
+\tableofcontents
+
+% ============================================================================
+% Abbreviations
+% ============================================================================
+\sectionnonum{Abbreviations}
+
+\begin{description}
+    \item[CNN] Convolutional Neural Network
+    \item[DISC21] Dataset for Image Similarity Challenge 2021
+    \item[DINOv2] Self-DIstillation with NO labels, version 2
+    \item[mAP] Mean Average Precision
+    \item[P@K] Precision at K
+    \item[ViT] Vision Transformer
+    \item[$\mu$AP] Micro Average Precision
+\end{description}
+
+% ============================================================================
+% Introduction
+% ============================================================================
+\sectionnonum{Introduction}
+
+Image similarity detection is a fundamental computer vision task with significant practical applications in content moderation, copyright enforcement, and misinformation tracking on social media platforms \cite{Dou21}. The task involves determining whether a query image is a modified copy of any image in a reference database, where modifications may include cropping, filtering, rotation, text overlays, or other transformations.
+
+Figure~\ref{fig:disc21_examples} illustrates concrete examples from the DISC21 dataset \cite{Dou21}. Each query image on the left is a modified version of the corresponding reference image on the right. The modifications include cropping, color adjustments, and composition changes. Despite these transformations, an effective similarity detection system should be able to match the query to its source reference.
+
+\begin{figure}[H]
+    \centering
+    \begin{tabular}{cc}
+        \includegraphics[width=0.35\textwidth]{img/examples/Q00061.jpg} &
+        \includegraphics[width=0.35\textwidth]{img/examples/R020965.jpg} \\
+        (a) Query image Q00061 & (b) Reference image R020965 \\[1em]
+        \includegraphics[width=0.35\textwidth]{img/examples/Q00338.jpg} &
+        \includegraphics[width=0.35\textwidth]{img/examples/R003142.jpg} \\
+        (c) Query image Q00338 & (d) Reference image R003142 \\
+    \end{tabular}
+    \caption{Examples of query-reference pairs from the DISC21 dataset. Queries (left) are modified versions of references (right). The task is to correctly match each query to its source reference.}
+    \label{fig:disc21_examples}
+\end{figure}
+
+Recent advances in self-supervised learning have produced powerful visual feature extractors that can be applied to similarity detection tasks. DINOv2 \cite{Oqu24}, developed by Meta AI, represents the state-of-the-art in learning robust visual features without supervision. Built on the Vision Transformer (ViT) architecture \cite{Dos21}, DINOv2 produces embeddings that capture semantic image content while remaining invariant to various transformations.
+
+The choice of loss function during fine-tuning significantly impacts the quality of learned embeddings for similarity tasks. Metric learning approaches such as contrastive loss \cite{Che20}, triplet loss \cite{Sch15}, and ArcFace loss \cite{Den22} each offer different strategies for learning discriminative embeddings. Understanding their comparative effectiveness is important for developing practical image similarity systems.
+
+\textbf{Aim.} The aim of this work is to compare the effectiveness of different loss functions for fine-tuning a pre-trained DINOv2 model on the image similarity challenge using the DISC21 dataset.
+
+\textbf{Objectives:}
+\begin{enumerate}
+    \item Establish a baseline by evaluating the pre-trained DINOv2 model without fine-tuning.
+    \item Implement and train models using three loss functions: contrastive loss, triplet loss, and ArcFace loss.
+    \item Evaluate all models using standard retrieval metrics: Precision@K, mean Average Precision (mAP), and micro Average Precision ($\mu$AP).
+    \item Analyze and compare the results to determine which loss function is most effective for image similarity.
+\end{enumerate}
+
+% ============================================================================
+% SECTION 1: THEORETICAL BACKGROUND
+% ============================================================================
+\section{Theoretical Background}
+
+This section explains the key concepts needed to understand the image similarity methods used in this work. We start with the Transformer architecture, then explain how it was adapted for images (Vision Transformers), discuss self-supervised learning, and finally describe the loss functions used for training.
+
+\subsection{Transformer Architecture}
+
+The Transformer is a neural network architecture introduced by Vaswani et al. \cite{Vas17} in 2017. It was originally designed for text processing tasks like translation. The key idea is the \textbf{attention mechanism}, which allows the model to look at all parts of the input at once and decide which parts are most important for each output.
+
+Before Transformers, most text models processed words one by one in order (like reading a sentence from left to right). This was slow and made it hard for the model to connect words that were far apart in a sentence. Transformers solve this by processing all words at the same time and using attention to find connections between any words, regardless of their position.
+
+\subsubsection{Attention Mechanism}
+
+The attention mechanism is the core idea behind Transformers. In simple terms, attention answers the question: "When processing this part of the input, which other parts should I pay attention to?"
+
+Vaswani et al. \cite{Vas17} define the attention function using three components:
+\begin{itemize}
+    \item \textbf{Query (Q)}: What we're looking for
+    \item \textbf{Key (K)}: What each element offers
+    \item \textbf{Value (V)}: The actual content to retrieve
+\end{itemize}
+
+The formula for computing attention, as defined in the original paper \cite{Vas17}, is:
+
+\begin{equation}
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+\label{eq:attention}
+\end{equation}
+
+In plain terms: the model computes a similarity score between each query and all keys (the $QK^T$ part), normalizes these scores to sum to 1 (the softmax part), and uses them to create a weighted combination of values. The division by $\sqrt{d_k}$ (where $d_k$ is the size of the key vectors) keeps the numbers from getting too large.
+
+\textbf{Multi-head attention} runs several attention operations in parallel, each learning to focus on different types of relationships. For example, one "head" might learn to connect subjects with verbs, while another connects adjectives with nouns. The outputs are combined at the end.
+
+\subsubsection{Transformer Encoder Structure}
+
+The Transformer encoder is built by stacking multiple identical layers. Each layer has two main parts:
+\begin{enumerate}
+    \item \textbf{Attention layer}: Lets each position look at all other positions
+    \item \textbf{Feed-forward layer}: Processes each position independently
+\end{enumerate}
+
+Between these parts, the model uses "residual connections" (adding the input back to the output) and "layer normalization" (keeping values in a reasonable range). Figure~\ref{fig:transformer} shows this structure.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.7\textwidth}{
+\centering
+\textbf{Transformer Encoder Block}\\[0.5em]
+\begin{tabular}{c}
+Input \\
+$\downarrow$ \\
+\fbox{Multi-Head Attention} \\
+$\downarrow$ (add input back + normalize) \\
+\fbox{Feed-Forward Network} \\
+$\downarrow$ (add input back + normalize) \\
+Output \\[0.3em]
+\textit{(this block is repeated $N$ times)}
+\end{tabular}
+}}
+\caption{Structure of a Transformer encoder block, as described in \cite{Vas17}.}
+\label{fig:transformer}
+\end{figure}
+
+\subsection{Vision Transformers}
+
+The Vision Transformer (ViT) was introduced by Dosovitskiy et al. \cite{Dos21} in 2020. The main idea is simple: instead of using Transformers for text, use them for images. But images are not sequences of words, so how do we adapt the architecture?
+
+\subsubsection{Treating Images as Sequences}
+
+The solution is to split the image into small square pieces called \textbf{patches}. For example, a 224$\times$224 pixel image can be divided into 196 patches of 16$\times$16 pixels each. Each patch is then converted into a vector (a list of numbers), similar to how words are converted to vectors in text models.
+
+The process works as follows:
+\begin{enumerate}
+    \item Split the image into $N$ non-overlapping patches (e.g., 14$\times$14 = 196 patches)
+    \item Flatten each patch into a 1D vector
+    \item Project each vector to a fixed size using a linear layer
+    \item Add position information so the model knows where each patch came from
+    \item Process through the Transformer encoder
+\end{enumerate}
+
+A special "classification token" [CLS] is added at the beginning. After processing, this token's output is used as the image representation. Figure~\ref{fig:vit} illustrates this process.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.8\textwidth}{
+\centering
+\textbf{Vision Transformer (ViT) Process}\\[0.5em]
+\begin{tabular}{c}
+Input Image (e.g., 224$\times$224 pixels) \\
+$\downarrow$ \\
+Split into patches (e.g., 196 patches of 16$\times$16) \\
+$\downarrow$ \\
+Convert each patch to a vector \\
+$\downarrow$ \\
+Add [CLS] token + position information \\
+$\downarrow$ \\
+Process through Transformer layers \\
+$\downarrow$ \\
+Use [CLS] output as image representation
+\end{tabular}
+}}
+\caption{How Vision Transformer processes an image, based on \cite{Dos21}.}
+\label{fig:vit}
+\end{figure}
+
+\subsubsection{ViT Model Sizes}
+
+ViT comes in different sizes, from small to huge. Larger models can learn more complex patterns but require more computing power. Table~\ref{tab:vit_variants} shows the standard configurations. The naming convention ViT-X/Y means variant X with patch size Y (e.g., ViT-S/14 is the Small model with 14$\times$14 patches).
+
+\begin{table}[H]
+\centering
+\caption{Vision Transformer model sizes, as defined in \cite{Dos21}}
+\label{tab:vit_variants}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Layers} & \textbf{Hidden Size} & \textbf{Heads} & \textbf{Parameters} \\
+\midrule
+ViT-S (Small) & 12 & 384 & 6 & 22M \\
+ViT-B (Base) & 12 & 768 & 12 & 86M \\
+ViT-L (Large) & 24 & 1024 & 16 & 307M \\
+ViT-H (Huge) & 32 & 1280 & 16 & 632M \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In this work, we use the ViT-S (Small) variant because it offers a good balance between performance and computational requirements.
+
+\subsection{Self-Supervised Learning and DINOv2}
+
+\textbf{Self-supervised learning} is a way to train neural networks without manually labeled data. Instead of telling the model "this image is a cat", the model learns by solving tasks it creates for itself. For example, it might learn to match different views of the same image, or to predict missing parts of an image.
+
+This is important because labeling millions of images is expensive and time-consuming. Self-supervised learning allows models to learn from huge amounts of unlabeled images from the internet.
+
+\subsubsection{How DINO Works}
+
+DINO (Self-\textbf{DI}stillation with \textbf{NO} labels) \cite{Car21} uses a clever training approach with two networks:
+
+\begin{itemize}
+    \item \textbf{Student network}: The model being trained
+    \item \textbf{Teacher network}: A slowly-updated copy of the student
+\end{itemize}
+
+During training, both networks see the same image but with different random changes applied (cropping, color changes, etc.). The student tries to produce the same output as the teacher. Since the teacher changes slowly, it provides stable targets for the student to learn from.
+
+This approach works surprisingly well: the model learns to recognize objects and scenes without ever being told what they are. The resulting image representations capture the semantic meaning of images.
+
+\subsubsection{DINOv2}
+
+DINOv2 \cite{Oqu24} is an improved version released by Meta AI in 2023. The main improvements are:
+
+\begin{itemize}
+    \item \textbf{More training data}: 142 million carefully selected images
+    \item \textbf{Better training}: Combines multiple learning objectives
+    \item \textbf{Multiple sizes}: From small (22M parameters) to giant (1.1B parameters)
+\end{itemize}
+
+The key advantage of DINOv2 for our task is that it produces image embeddings that are:
+\begin{itemize}
+    \item \textbf{Meaningful}: Similar images get similar embeddings
+    \item \textbf{Robust}: Embeddings stay similar even when images are cropped, rotated, or color-adjusted
+    \item \textbf{General}: Works well for many different tasks without task-specific training
+\end{itemize}
+
+These properties make DINOv2 well-suited for image similarity detection.
+
+\subsection{Metric Learning and Loss Functions}
+
+\textbf{Metric learning} is about teaching a neural network to measure similarity between images. The goal is to convert images into vectors (called embeddings) such that:
+\begin{itemize}
+    \item Similar images have embeddings that are \textbf{close together}
+    \item Different images have embeddings that are \textbf{far apart}
+\end{itemize}
+
+This is illustrated in Figure~\ref{fig:metric_learning}. The key question is: how do we train a model to do this? The answer is through \textbf{loss functions} that define what "good" embeddings look like.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.8\textwidth}{
+\centering
+\textbf{Goal of Metric Learning}\\[0.5em]
+\begin{tabular}{ccc}
+\textbf{Before Training} & $\longrightarrow$ & \textbf{After Training} \\[0.5em]
+Random embeddings & & Grouped by similarity \\
+(images scattered randomly) & & (similar images close together)
+\end{tabular}
+}}
+\caption{Metric learning teaches the model to place similar images close together in the embedding space.}
+\label{fig:metric_learning}
+\end{figure}
+
+Three different loss functions were tested, each with a different approach to this problem. The formulas come from the original papers that introduced these methods.
+
+\subsubsection{Contrastive Loss}
+
+Contrastive loss, popularized by SimCLR \cite{Che20}, works with \textbf{pairs} of images. For each pair, we know whether they should be similar (positive pair) or different (negative pair).
+
+The formula \cite{Che20} is:
+\begin{equation}
+\mathcal{L}_{\text{contrastive}} = y \cdot d^2 + (1-y) \cdot \max(0, m - d)^2
+\label{eq:contrastive}
+\end{equation}
+
+In plain terms:
+\begin{itemize}
+    \item $y = 1$ means "these images should be similar" $\rightarrow$ minimize the distance $d$
+    \item $y = 0$ means "these images should be different" $\rightarrow$ push them apart until distance is at least $m$
+\end{itemize}
+
+The parameter $m$ (margin) defines how far apart negative pairs should be. Once they're far enough, the model stops pushing them further.
+
+\subsubsection{Triplet Loss}
+
+Triplet loss, introduced by Schroff et al. \cite{Sch15} for face recognition, works with \textbf{three} images at a time:
+\begin{itemize}
+    \item \textbf{Anchor}: The reference image
+    \item \textbf{Positive}: An image that should be similar to anchor
+    \item \textbf{Negative}: An image that should be different from anchor
+\end{itemize}
+
+The formula \cite{Sch15} is:
+\begin{equation}
+\mathcal{L}_{\text{triplet}} = \max(0, d_{ap} - d_{an} + m)
+\label{eq:triplet}
+\end{equation}
+
+The idea is simple: the anchor should be closer to the positive than to the negative, by at least a margin $m$. Figure~\ref{fig:triplet} illustrates this.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.7\textwidth}{
+\centering
+\textbf{Triplet Loss Requirement}\\[0.5em]
+\begin{tabular}{c}
+distance(Anchor, Positive) + margin $<$ distance(Anchor, Negative) \\[0.5em]
+In other words: the similar image should be \\
+closer than the different image, with some room to spare.
+\end{tabular}
+}}
+\caption{Triplet loss requires the positive to be closer to the anchor than the negative by at least margin $m$.}
+\label{fig:triplet}
+\end{figure}
+
+\textbf{Triplet mining} is important: if we pick random triplets, most will already satisfy the constraint (loss = 0) and the model learns nothing. "Hard" triplet mining finds difficult cases where the negative is closer than expected.
+
+\subsubsection{ArcFace Loss}
+
+ArcFace \cite{Den22} takes a different approach. Instead of comparing pairs or triplets, it treats each image as a separate class and trains a classifier. The clever part is adding an \textbf{angular margin} that forces the model to create well-separated clusters.
+
+The formula from \cite{Den22} is complex:
+\begin{equation}
+\mathcal{L}_{\text{arcface}} = -\log \frac{e^{s \cdot \cos(\theta_{y} + m)}}{e^{s \cdot \cos(\theta_{y} + m)} + \sum_{j \neq y} e^{s \cdot \cos(\theta_j)}}
+\label{eq:arcface}
+\end{equation}
+
+The key idea in simpler terms: the model learns to place each image's embedding close to its "class center" (a learned vector), and the margin $m$ ensures there's clear separation between different classes. The parameters $s$ (scale) and $m$ (margin) control how strict this separation should be.
+
+Figure~\ref{fig:arcface} shows the difference from standard classification.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.75\textwidth}{
+\centering
+\textbf{ArcFace vs Standard Classification}\\[0.5em]
+\begin{tabular}{cc}
+\textbf{Standard} & \textbf{ArcFace} \\[0.3em]
+Classes can be close together & Margin forces separation \\
+May overlap at boundaries & Clear gaps between classes
+\end{tabular}
+}}
+\caption{ArcFace adds a margin that forces clearer separation between image classes.}
+\label{fig:arcface}
+\end{figure}
+
+\subsubsection{Summary of Loss Functions}
+
+Table~\ref{tab:loss_comparison} summarizes the three loss functions.
+
+\begin{table}[H]
+\centering
+\caption{Comparison of metric learning loss functions}
+\label{tab:loss_comparison}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Property} & \textbf{Contrastive} & \textbf{Triplet} & \textbf{ArcFace} \\
+\midrule
+Input type & Pairs & Triplets & Single samples \\
+Requires labels & Pair labels & Class labels & Class labels \\
+Mining needed & No & Yes & No \\
+Formulation & Distance-based & Distance-based & Angular \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Evaluation Metrics}
+
+To measure how well our models perform at finding similar images, we use several standard metrics from information retrieval.
+
+\subsubsection{Precision at K}
+
+\textbf{Precision@K (P@K)} answers a simple question: "Is the correct match among the top K results?"
+
+\begin{itemize}
+    \item \textbf{P@1}: Is the \#1 result correct? (most strict)
+    \item \textbf{P@5}: Is the correct match in the top 5?
+    \item \textbf{P@10}: Is the correct match in the top 10?
+\end{itemize}
+
+We calculate the percentage of queries where this is true. For example, P@1 = 60\% means the correct match was ranked first for 60\% of queries.
+
+\subsubsection{Mean Average Precision}
+
+\textbf{Mean Average Precision (mAP)} measures not just whether we find the correct match, but how high we rank it. A system that consistently ranks correct matches near the top will have higher mAP than one that finds them but ranks them lower.
+
+\subsubsection{Micro Average Precision}
+
+\textbf{Micro Average Precision ($\mu$AP)} is the official metric used in the DISC21 challenge \cite{Dou21}. As explained in the DISC21 paper, this metric treats each query-reference pair equally, which is important for real-world scenarios where some queries might have multiple correct matches.
+
+The DISC21 authors chose $\mu$AP because copy detection operates in a "needle in haystack" setting---most query images do not have matches, and when matches exist, finding them with high confidence matters more than finding all possible matches.
+
+% ============================================================================
+% SECTION 2: METHODOLOGY
+% ============================================================================
+\section{Methodology}
+
+This section describes the dataset, model architecture, and experimental setup used in this work.
+
+\subsection{DISC21 Dataset}
+
+The DISC21 dataset \cite{Dou21} was created by Meta AI for the Image Similarity Challenge at NeurIPS 2021. It is designed to evaluate large-scale image copy detection systems in realistic scenarios.
+
+The dataset contains over 2 million images with various transformations including:
+\begin{itemize}
+    \item Geometric transformations: crops, rotations, flips, scaling
+    \item Photometric changes: color filters, brightness/contrast adjustments
+    \item Overlays: text, logos, borders, watermarks
+    \item Complex edits: collages, memes, screenshots
+    \item Adversarial perturbations: designed to fool detection systems
+\end{itemize}
+
+For this work, a subset of approximately 50,000 images per category was used due to computational constraints (see Table~\ref{tab:dataset}).
+
+\begin{table}[H]
+\centering
+\caption{DISC21 dataset subset used in experiments}
+\label{tab:dataset}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Split} & \textbf{Images} & \textbf{Purpose} \\
+\midrule
+Training set & 50,000 & Fine-tuning with loss functions \\
+Reference set & 50,000 & Database to search against \\
+Development queries & 50,000 & Model validation and tuning \\
+Test queries & 50,000 & Final evaluation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ground truth files provide 10,000 query-to-reference mappings for both development and test sets, indicating which queries match which references.
+
+\subsection{Model Architecture}
+
+The model architecture consists of a pre-trained DINOv2 backbone followed by a trainable projection head (see Figure~\ref{fig:architecture}).
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.8\textwidth}{
+\centering
+\textbf{Model Architecture}\\[0.5em]
+Input Image ($224 \times 224 \times 3$) \\
+$\downarrow$ \\
+\textbf{DINOv2 ViT-S/14} (21M parameters, frozen) \\
+Output: 384-dimensional features \\
+$\downarrow$ \\
+\textbf{Projection Head} (Linear layer, trainable) \\
+$384 \rightarrow 128$ dimensions \\
+$\downarrow$ \\
+\textbf{L2 Normalization} \\
+$\downarrow$ \\
+Output Embedding (128-dimensional, unit length)
+}}
+\caption{Model architecture: DINOv2 backbone with projection head}
+\label{fig:architecture}
+\end{figure}
+
+We used DINOv2 ViT-S/14 (the Small variant) because it is small enough to train on available hardware while still providing good results.
+
+During training, we kept the DINOv2 backbone frozen (its weights were not updated). Only the projection head was trained. We did this because DINOv2 was already trained on millions of images and has learned useful features. If we trained the entire model, these features might get overwritten and lost. By freezing the backbone, we keep what DINOv2 already knows and only train the small projection head for our specific task.
+
+The projection head takes the 384-dimensional output from DINOv2 and reduces it to 128 dimensions. This smaller size makes similarity comparisons faster. Finally, L2 normalization is applied so that all embeddings have the same length, which is needed for calculating cosine similarity.
+
+\subsection{Data Augmentation}
+
+Data augmentation plays a crucial role in metric learning by creating positive pairs from single images. During training, the following augmentations were applied:
+
+\begin{itemize}
+    \item \textbf{Random Resized Crop}: Images were randomly cropped to 80-100\% of the original area and resized to 224$\times$224 pixels.
+    \item \textbf{Horizontal Flip}: Applied with 50\% probability.
+    \item \textbf{Color Jitter}: Random adjustments to brightness ($\pm$20\%), contrast ($\pm$20\%), saturation ($\pm$20\%), and hue ($\pm$10\%).
+    \item \textbf{Normalization}: ImageNet mean and standard deviation normalization.
+\end{itemize}
+
+For evaluation, only deterministic center cropping and normalization were applied to ensure reproducible results.
+
+\subsection{Experimental Setup}
+
+All experiments were conducted on the VU MIF HPC cluster using NVIDIA Tesla V100 GPUs with 32GB memory. The PyTorch Metric Learning library \cite{Mus20} was used for implementing the loss functions and mining strategies. Training parameters are summarized in Table~\ref{tab:training}.
+
+\begin{table}[H]
+\centering
+\caption{Training hyperparameters}
+\label{tab:training}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Batch size & 256 (local) / 1024 (HPC) \\
+Learning rate & $10^{-4}$ (local) / $4 \times 10^{-4}$ (HPC) \\
+Optimizer & AdamW (weight decay = 0.01) \\
+Learning rate schedule & Cosine annealing with warm restarts \\
+Epochs & 20 \\
+Embedding dimension & 128 \\
+Backbone & DINOv2 ViT-S/14 (frozen) \\
+Margin (triplet/contrastive) & 0.5 \\
+ArcFace scale & 64 \\
+ArcFace margin & 0.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For contrastive and triplet losses, positive pairs were created by applying data augmentation to the same image twice, producing two different views of the same content. Negative pairs were sampled from different images within the same batch. For triplet loss, hard negative mining was employed to select the most challenging triplets.
+
+For ArcFace loss, each training image was treated as its own class. This approach transforms the similarity learning problem into a classification problem with 50,000 classes, where the angular margin penalty encourages better separation between classes.
+
+\subsection{Evaluation Protocol}
+
+The evaluation pipeline consists of the following steps:
+
+\begin{enumerate}
+    \item \textbf{Feature Extraction}: Extract 128-dimensional embeddings for all query and reference images using the trained model.
+    \item \textbf{Similarity Computation}: Compute cosine similarity between each query embedding and all reference embeddings.
+    \item \textbf{Ranking}: For each query, rank all references by descending similarity score.
+    \item \textbf{Metric Calculation}: Compare rankings against ground truth to compute P@K, mAP, and $\mu$AP.
+\end{enumerate}
+
+Evaluation was performed every 5 epochs on the development query set. The model checkpoint with the best mAP score was saved for final evaluation. Feature extraction for 100,000 images (50,000 queries + 50,000 references) took approximately 6 minutes on a V100 GPU.
+
+% ============================================================================
+% SECTION 3: EXPERIMENTS AND RESULTS
+% ============================================================================
+\section{Experiments and Results}
+
+This section presents the experimental results comparing the baseline DINOv2 model with models fine-tuned using different loss functions. We analyze the training dynamics, compare final performance metrics, and discuss the implications of our findings.
+
+\subsection{Baseline Evaluation}
+
+The baseline was established by evaluating the pre-trained DINOv2 model without any fine-tuning. Features were extracted using the frozen backbone followed by the randomly initialized projection head.
+
+The baseline achieves strong performance (P@1 = 56.71\%) even without task-specific training, demonstrating that DINOv2's pre-trained features are already well-suited for image similarity tasks. This strong baseline provides a challenging benchmark for evaluating the effectiveness of fine-tuning approaches.
+
+\subsection{Training Dynamics}
+
+Figure~\ref{fig:training_curves_main} shows the training loss curves for all three loss functions over 20 epochs. The curves reveal distinctly different learning behaviors.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{img/training_curves.pdf}
+    \caption{Training loss curves for different loss functions. Left: Contrastive and Triplet losses (same scale). Right: ArcFace loss (different scale due to higher initial values).}
+    \label{fig:training_curves_main}
+\end{figure}
+
+Key observations from the training curves:
+\begin{itemize}
+    \item \textbf{Contrastive loss} shows gradual decrease from 0.079 to 0.054, indicating stable convergence.
+    \item \textbf{Triplet loss} remains at exactly 0.0 throughout training—a surprising result analyzed in Section~\ref{sec:triplet_analysis}.
+    \item \textbf{ArcFace loss} shows rapid initial decrease from 27.36 to approximately 0.35, indicating strong learning signal.
+\end{itemize}
+
+\subsection{Fine-tuning with Contrastive Loss}
+
+Training with contrastive loss produced positive pairs by applying random augmentations to the same image, while negative pairs came from different images within the batch. The decreasing loss values indicate that the model learned to distinguish between positive and negative pairs.
+
+However, the resulting model showed mixed performance compared to baseline:
+\begin{itemize}
+    \item P@1 decreased by 1.51\% (56.71\% $\rightarrow$ 55.20\%)
+    \item P@5 decreased by 0.95\% (61.25\% $\rightarrow$ 60.30\%)
+    \item $\mu$AP \textbf{improved} by 6.92\% (41.44\% $\rightarrow$ 48.36\%)
+\end{itemize}
+
+This trade-off suggests that contrastive learning improved the model's ability to find relevant images overall (higher $\mu$AP) but at the cost of placing the exact match at rank 1 (lower P@1). The model may have learned to group similar images together more broadly rather than precisely distinguishing source-copy pairs.
+
+\subsection{Fine-tuning with Triplet Loss}
+\label{sec:triplet_analysis}
+
+An unexpected result was observed with triplet loss training: the loss remained at exactly 0.0 throughout all 20 epochs. This indicates that the hard triplet mining strategy could not find any triplets that violated the margin constraint.
+
+\textbf{Why did this happen?} DINOv2's pre-trained embeddings are already highly discriminative. When computing triplet distances:
+\begin{equation}
+d(a, p) + m < d(a, n) \quad \text{(margin constraint already satisfied)}
+\end{equation}
+
+For all potential triplets in the training data, the positive (augmented view of the same image) was already much closer to the anchor than any negative, by more than the margin $m = 0.5$. Since the loss is $\max(0, d(a,p) - d(a,n) + m)$, and $d(a,p) - d(a,n) + m < 0$ for all triplets, the loss was always zero.
+
+\textbf{Implications:} This finding highlights an important consideration when fine-tuning state-of-the-art pre-trained models: the loss function must provide a learning signal beyond what the model has already learned. Triplet loss with standard margins may be insufficient for highly capable backbones.
+
+\subsection{Fine-tuning with ArcFace Loss}
+
+ArcFace loss showed strong learning dynamics with loss decreasing from 27.36 to 0.35 over 20 epochs. The high initial loss is expected because the model starts with 50,000 classes (one per training image) and random classification weights.
+
+The angular margin approach fundamentally differs from pairwise losses:
+\begin{enumerate}
+    \item Each image is treated as a separate class
+    \item The model learns to project images close to their class center (weight vector)
+    \item The angular margin ensures large separation between different classes
+\end{enumerate}
+
+Results showed consistent improvement across all metrics:
+\begin{itemize}
+    \item P@1 improved by 1.70\% (56.71\% $\rightarrow$ 58.41\%)
+    \item mAP improved by 1.66\% (58.80\% $\rightarrow$ 60.46\%)
+    \item $\mu$AP improved by 8.60\% (41.44\% $\rightarrow$ 50.04\%)
+\end{itemize}
+
+\subsection{Results Comparison}
+
+Table~\ref{tab:results} summarizes the performance of all methods on the development query set.
+
+\begin{table}[H]
+\centering
+\caption{Comparison of image similarity methods on DISC21 development set}
+\label{tab:results}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{P@1} & \textbf{P@5} & \textbf{P@10} & \textbf{mAP} & \textbf{$\mu$AP} \\
+\midrule
+Baseline (no fine-tuning) & 56.71\% & 61.25\% & 62.95\% & 58.80\% & 41.44\% \\
+Contrastive Loss & 55.20\% & 60.30\% & 62.76\% & 57.71\% & 48.36\% \\
+Triplet Loss & 56.71\% & 62.19\% & 64.08\% & 59.43\% & 42.21\% \\
+\textbf{ArcFace Loss} & \textbf{58.41\%} & \textbf{63.14\%} & \textbf{63.71\%} & \textbf{60.46\%} & \textbf{50.04\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:results_comparison_main} provides a visual comparison of the results.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{img/results_comparison.pdf}
+    \caption{Visual comparison of evaluation metrics. Left: Precision metrics (P@1, P@5, P@10). Right: Average precision metrics (mAP, $\mu$AP).}
+    \label{fig:results_comparison_main}
+\end{figure}
+
+\subsection{Discussion}
+
+The experimental results reveal several important findings:
+
+\textbf{1. Loss function choice matters significantly.} The three loss functions produced very different outcomes despite using the same backbone and training data. ArcFace consistently outperformed others, while triplet loss failed to provide any learning signal.
+
+\textbf{2. Pre-training quality affects fine-tuning strategy.} The failure of triplet loss demonstrates that not all metric learning approaches are suitable for fine-tuning state-of-the-art models. The choice of loss function should consider what the pre-trained model has already learned.
+
+\textbf{3. Different metrics capture different aspects.} Contrastive loss improved $\mu$AP while decreasing P@1, suggesting that optimizing for broad relevance may conflict with precise top-1 accuracy. The choice of evaluation metric should align with the application requirements.
+
+\textbf{4. Angular margin approaches are robust.} ArcFace's formulation as a classification problem with angular margin provides a consistent learning signal regardless of the pre-training quality, making it a safer choice for fine-tuning.
+
+Table~\ref{tab:results_change} summarizes the changes from baseline for each method.
+
+\begin{table}[H]
+\centering
+\caption{Performance change from baseline (\% points)}
+\label{tab:results_change}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{$\Delta$P@1} & \textbf{$\Delta$P@5} & \textbf{$\Delta$P@10} & \textbf{$\Delta$mAP} & \textbf{$\Delta\mu$AP} \\
+\midrule
+Contrastive & $-$1.51 & $-$0.95 & $-$0.19 & $-$1.09 & \textbf{+6.92} \\
+Triplet & 0.00 & +0.94 & +1.13 & +0.63 & +0.77 \\
+ArcFace & \textbf{+1.70} & \textbf{+1.89} & +0.76 & \textbf{+1.66} & \textbf{+8.60} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+% REZULTATAI IR IŠVADOS (Results and Conclusions)
+% ============================================================================
+\sectionnonum{Results and Conclusions}
+
+This work compared three loss functions—contrastive, triplet, and ArcFace—for fine-tuning a pre-trained DINOv2 model on the image similarity task using the DISC21 dataset.
+
+\textbf{Main results:}
+\begin{enumerate}
+    \item \textbf{ArcFace loss is the most effective} for fine-tuning DINOv2 on image similarity tasks, achieving improvements of +1.7\% in P@1 and +8.6\% in $\mu$AP compared to the baseline.
+    
+    \item \textbf{Triplet loss is ineffective} for fine-tuning highly pre-trained models like DINOv2. The model's embeddings already satisfy the triplet constraint, resulting in zero loss and no learning.
+    
+    \item \textbf{Contrastive loss produces mixed results}, improving coverage ($\mu$AP) at the expense of top-rank precision (P@K).
+    
+    \item \textbf{DINOv2's pre-trained features are highly effective} for image similarity even without fine-tuning, achieving P@1 of 56.71\%.
+\end{enumerate}
+
+\textbf{Conclusions:}
+\begin{enumerate}
+    \item For practical image similarity systems using pre-trained Vision Transformers, ArcFace loss is recommended for fine-tuning.
+    
+    \item Not all metric learning losses are suitable for fine-tuning state-of-the-art pre-trained models—triplet loss may fail when embeddings already satisfy its constraints.
+    
+    \item The angular margin approach of ArcFace creates better-separated embedding clusters, which is particularly beneficial for retrieval tasks.
+\end{enumerate}
+
+\textbf{Limitations and future work:}
+\begin{itemize}
+    \item This study used a subset of the DISC21 dataset; full-scale experiments may yield different insights.
+    \item Only one model size (ViT-S) was evaluated; larger variants (ViT-B, ViT-L) may show different behavior.
+    \item Unfreezing the backbone with careful learning rate scheduling could potentially improve results further.
+    \item Combining multiple loss functions or using curriculum learning strategies could be explored.
+\end{itemize}
+
+% ============================================================================
+% ŠALTINIAI (References)
+% ============================================================================
+\printbibliography[heading=bibintoc]
+
+% ============================================================================
+% PRIEDAI (Appendices)
+% ============================================================================
+\appendix{Detailed Training Logs}
+
+This appendix provides the detailed epoch-by-epoch training statistics for each loss function, taken directly from the HPC training logs.
+
+\textbf{Contrastive Loss Training Log:}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Epoch} & \textbf{Avg Loss} & \textbf{Epoch} & \textbf{Avg Loss} \\
+\midrule
+0 & 0.0788 & 10 & 0.0569 \\
+1 & 0.0744 & 11 & 0.0568 \\
+2 & 0.0765 & 12 & 0.0568 \\
+3 & 0.0718 & 13 & 0.0601 \\
+4 & 0.0709 & 14 & 0.0610 \\
+5 & 0.0651 & 15 & 0.0569 \\
+6 & 0.0654 & 16 & 0.0529 \\
+7 & 0.0650 & 17 & 0.0606 \\
+8 & 0.0621 & 18 & 0.0529 \\
+9 & 0.0603 & 19 & 0.0537 \\
+\bottomrule
+\end{tabular}
+\caption{Contrastive loss training progression (actual HPC log data)}
+\end{table}
+
+\textbf{Triplet Loss Training Log:}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Epoch} & \textbf{Avg Loss} & \textbf{Epoch} & \textbf{Avg Loss} \\
+\midrule
+0 & 0.0 & 10 & 0.0 \\
+1 & 0.0 & 11 & 0.0 \\
+2 & 0.0 & 12 & 0.0 \\
+3 & 0.0 & 13 & 0.0 \\
+4 & 0.0 & 14 & 0.0 \\
+5 & 0.0 & 15 & 0.0 \\
+6 & 0.0 & 16 & 0.0 \\
+7 & 0.0 & 17 & 0.0 \\
+8 & 0.0 & 18 & 0.0 \\
+9 & 0.0 & 19 & 0.0 \\
+\bottomrule
+\end{tabular}
+\caption{Triplet loss training progression---loss remained 0.0 throughout all epochs because the hard triplet miner could not find any triplets violating the margin constraint}
+\end{table}
+
+\textbf{ArcFace Loss Training Log:}
+\begin{table}[H]
+  \centering
+\small
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Epoch} & \textbf{Avg Loss} & \textbf{Epoch} & \textbf{Avg Loss} \\
+\midrule
+0 & 27.36 & 10 & 0.90 \\
+1 & 21.53 & 11 & 0.72 \\
+2 & 16.88 & 12 & 0.59 \\
+3 & 12.90 & 13 & 0.51 \\
+4 & 9.33 & 14 & 0.45 \\
+5 & 6.33 & 15 & 0.41 \\
+6 & 4.06 & 16 & 0.39 \\
+7 & 2.58 & 17 & 0.37 \\
+8 & 1.71 & 18 & 0.36 \\
+9 & 1.20 & 19 & 0.35 \\
+\bottomrule
+\end{tabular}
+\caption{ArcFace loss training progression (actual HPC log data)}
+\end{table}
+
+\appendix{Experimental Environment}
+
+All experiments were conducted using the following hardware and software configuration:
+
+\textbf{Hardware:}
+\begin{itemize}
+    \item \textbf{HPC Cluster}: VU MIF HPC (Vilnius University)
+    \item \textbf{GPU}: NVIDIA Tesla V100 (32GB HBM2)
+    \item \textbf{CPU}: Intel Xeon (4 cores allocated per job)
+    \item \textbf{RAM}: 64GB per job
+\end{itemize}
+
+\textbf{Software:}
+\begin{itemize}
+    \item \textbf{Python}: 3.10
+    \item \textbf{PyTorch}: 2.0 with CUDA 11.8
+    \item \textbf{PyTorch Metric Learning}: 2.3.0
+    \item \textbf{DINOv2}: torch.hub (dinov2\_vits14)
+\end{itemize}
+
+\textbf{Training Time:}
+\begin{itemize}
+    \item Baseline evaluation: $\sim$10 minutes
+    \item Contrastive training (20 epochs): $\sim$45 minutes
+    \item ArcFace training (20 epochs): $\sim$60 minutes
+    \item Triplet training (20 epochs): $\sim$40 minutes
+\end{itemize}
+
+\end{document}
